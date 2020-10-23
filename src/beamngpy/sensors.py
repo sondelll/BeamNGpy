@@ -16,8 +16,10 @@ import logging as log
 import mmap
 import os
 import sys
+import tempfile
 
 import numpy as np
+
 from PIL import Image
 
 NEAR = 0.01
@@ -194,10 +196,13 @@ class Camera(Sensor):
         self.depth = depth
         self.annotation = annotation
 
+        self.colour_file = None
         self.colour_handle = None
         self.colour_shmem = None
+        self.depth_file = None
         self.depth_handle = None
         self.depth_shmem = None
+        self.annotation_file = None
         self.annotation_handle = None
         self.annotation_shmem = None
 
@@ -219,18 +224,24 @@ class Camera(Sensor):
             prefix = vehicle.vid
         size = self.resolution[0] * self.resolution[1] * 4  # RGBA / L are 4bbp
         # if self.colour:
+        self.colour_file = tempfile.TemporaryFile()
         self.colour_handle = '{}.{}.{}.colour'.format(pid, prefix, name)
-        self.colour_shmem = mmap.mmap(0, size, self.colour_handle)
+        self.colour_shmem = mmap.mmap(self.colour_file.fileno(),
+                                      size, self.colour_handle)
         log.debug('Bound memory for colour: %s', self.colour_handle)
 
         # if self.depth:
+        self.depth_file = tempfile.TemporaryFile()
         self.depth_handle = '{}.{}.{}.depth'.format(pid, prefix, name)
-        self.depth_shmem = mmap.mmap(0, size, self.depth_handle)
+        self.depth_shmem = mmap.mmap(self.depth_file.fileno(),
+                                     size, self.depth_handle)
         log.debug('Bound memory for depth: %s', self.depth_handle)
 
         # if self.annotation:
+        self.annotation_file = tempfile.TemporaryFile()
         self.annotation_handle = '{}.{}.{}.annotate'.format(pid, prefix, name)
-        self.annotation_shmem = mmap.mmap(0, size, self.annotation_handle)
+        self.annotation_shmem = mmap.mmap(self.annotation_file.fileno(),
+                                          size, self.annotation_handle)
         log.debug('Bound memory for annotation: %s',
                   self.annotation_handle)
 
@@ -247,15 +258,18 @@ class Camera(Sensor):
         if self.colour_shmem:
             log.debug('Unbinding memory for color: %s', self.colour_handle)
             self.colour_shmem.close()
+            self.colour_file.close()
 
         if self.depth_shmem:
             log.debug('Unbinding memory for depth: %s', self.depth_handle)
             self.depth_shmem.close()
+            self.depth_file.close()
 
         if self.annotation_shmem:
             log.debug('Unbinding memory for annotation: %s',
                       self.annotation_handle)
             self.annotation_shmem.close()
+            self.annotation_file.close()
 
     def connect(self, bng, vehicle):
         """
@@ -411,6 +425,7 @@ class Lidar(Sensor):
                  visualized=True):
         self.handle = None
         self.shmem = None
+        self.file = None
 
         self.offset = offset
         self.direction = direction
@@ -435,8 +450,10 @@ class Lidar(Sensor):
             name (str): The name of the sensor.
         """
         pid = os.getpid()
+        self.file = tempfile.TemporaryFile()
         self.handle = '{}.{}.{}.lidar'.format(pid, vehicle.vid, name)
-        self.shmem = mmap.mmap(0, Lidar.shmem_size, self.handle)
+        self.shmem = mmap.mmap(self.file.fileno(),
+                               Lidar.shmem_size, self.handle)
         log.debug('Bound memory for lidar: %s', self.handle)
 
     def detach(self, vehicle, name):
