@@ -213,26 +213,8 @@ class Camera(Sensor):
                                          attached to.
             name (str): The name of the camera.
         """
-        pid = os.getpid()
-        prefix = ''
-        if vehicle:
-            prefix = vehicle.vid
-        size = self.resolution[0] * self.resolution[1] * 4  # RGBA / L are 4bbp
-        # if self.colour:
-        self.colour_handle = '{}.{}.{}.colour'.format(pid, prefix, name)
-        self.colour_shmem = mmap.mmap(0, size, self.colour_handle)
-        log.debug('Bound memory for colour: %s', self.colour_handle)
-
-        # if self.depth:
-        self.depth_handle = '{}.{}.{}.depth'.format(pid, prefix, name)
-        self.depth_shmem = mmap.mmap(0, size, self.depth_handle)
-        log.debug('Bound memory for depth: %s', self.depth_handle)
-
-        # if self.annotation:
-        self.annotation_handle = '{}.{}.{}.annotate'.format(pid, prefix, name)
-        self.annotation_shmem = mmap.mmap(0, size, self.annotation_handle)
-        log.debug('Bound memory for annotation: %s',
-                  self.annotation_handle)
+        # Nothing for now since this only uses sockets
+        pass
 
     def detach(self, vehicle, name):
         """
@@ -267,16 +249,8 @@ class Camera(Sensor):
             bng (:class:`.BeamNGpy`): Running instance of BeamNGpy.
             vehicle (:class:`.Vehicle`): The vehicle being connected.
         """
-        size = self.resolution[0] * self.resolution[1] * 4  # RGBA / L are 4bbp
-
-        if self.colour_shmem:
-            bng.open_shmem(self.colour_handle, size)
-
-        if self.depth_shmem:
-            bng.open_shmem(self.depth_handle, size)
-
-        if self.annotation_shmem:
-            bng.open_shmem(self.annotation_handle, size)
+        # Nothing for now since this only uses sockets
+        pass
 
     def disconnect(self, bng, vehicle):
         """
@@ -326,6 +300,15 @@ class Camera(Sensor):
 
         return req
 
+    def decode_image(self, buffer, width, height, channels, dtype=np.uint8):
+        img_d = base64.b64decode(buffer)
+        img_d = np.frombuffer(img_d, dtype=dtype)
+        if channels > 1:
+            img_d = img_d.reshape(height, width, channels)
+        else:
+            img_d = img_d.reshape(height, width)
+        return Image.fromarray(img_d)
+
     def decode_response(self, resp):
         """
         This method obtains sensor data written to shared memory and decodes
@@ -344,42 +327,12 @@ class Camera(Sensor):
         img_w = resp['width']
         img_h = resp['height']
 
-        size = img_w * img_h * 4
-
-        if self.colour_shmem:
-            if 'color' in resp.keys():
-                self.colour_shmem.seek(0)
-                colour_d = self.colour_shmem.read(size)
-                colour_d = np.frombuffer(colour_d, dtype=np.uint8)
-                colour_d = colour_d.reshape(img_h, img_w, 4)
-                decoded['colour'] = Image.fromarray(colour_d)
-            else:
-                print('Color buffer failed to render. Check that you '
-                      'aren\'t running on low settings.', file=sys.stderr)
-
-        if self.annotation_shmem:
-            if 'annotation' in resp.keys():
-                self.annotation_shmem.seek(0)
-                annotate_d = self.annotation_shmem.read(size)
-                annotate_d = np.frombuffer(annotate_d, dtype=np.uint8)
-                annotate_d = annotate_d.reshape(img_h, img_w, 4)
-                decoded['annotation'] = Image.fromarray(annotate_d)
-            else:
-                print('Annotation buffer failed to render. Check that you '
-                      'aren\'t running on low settings.', file=sys.stderr)
-
-        if self.depth_shmem:
-            if 'depth' in resp.keys():
-                self.depth_shmem.seek(0)
-                depth_d = self.depth_shmem.read(size)
-                depth_d = np.frombuffer(depth_d, dtype=np.float32)
-                depth_d = depth_d / FAR
-                depth_d = depth_d.reshape(img_h, img_w)
-                depth_d = np.uint8(depth_d * 255)
-                decoded['depth'] = Image.fromarray(depth_d)
-            else:
-                print('Depth buffer failed to render. Check that you '
-                      'aren\'t running on low settings.', file=sys.stderr)
+        decoded['colour'] = self.decode_image(resp['colorRGB8'],
+                                              img_w, img_h, 4)
+        decoded['annotation'] = self.decode_image(resp['annotationRGB8'],
+                                                  img_w, img_h, 4)
+        decoded['depth'] = self.decode_image(resp['depth32F'],
+                                             img_w, img_h, 1, dtype=np.float32)
 
         return decoded
 
@@ -390,8 +343,7 @@ class Camera(Sensor):
         a dictionary enabling certain render modes in the engine.
         """
         flags = dict()
-        if self.annotation_shmem:
-            flags['annotations'] = True
+        flags['annotations'] = True
         return flags
 
 
@@ -487,14 +439,9 @@ class Lidar(Sensor):
             sequence of coordinate triplets in the form of [x0, y0, z0, x1,
             y1, z1, ..., xn, yn, zn].
         """
-        size = resp['size']
-        self.shmem.seek(0)
-        points_buf = self.shmem.read(size)
-        points_buf = np.frombuffer(points_buf, dtype=np.float32)
-        assert points_buf.size % 3 == 0
-        resp = dict(type='Lidar')
-        resp['points'] = points_buf
-        return resp
+        result = dict(type='Lidar')
+        result['points'] = np.array(resp['points'], dtype=np.float)
+        return result
 
     def get_engine_flags(self):
         """

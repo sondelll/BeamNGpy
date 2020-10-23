@@ -64,7 +64,8 @@ def test_lidar(beamng):
 
         arr = sensors['lidar']['points']
         ref = arr[0]
-        eq = arr[np.where(arr == ref)]
+        eq = np.where(arr == ref)
+        eq = arr[eq]
         assert eq.size != arr.size
 
 

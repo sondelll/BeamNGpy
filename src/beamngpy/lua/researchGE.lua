@@ -412,9 +412,9 @@ sensors.Camera = function(req, callback)
   local pos, direction, rot, fov, resolution, nearFar, vehicle, vehicleObj, data
   local color, depth, annotation
 
-  color = req['color']
-  depth = req['depth']
-  annotation = req['annotation']
+  color = req['color'] or 'color'
+  depth = req['depth'] or 'depth'
+  annotation = req['annotation'] or 'annotation'
 
   if req['vehicle'] then
     vehicle = scenarioHelper.getVehicleByName(req['vehicle'])
@@ -452,7 +452,8 @@ sensors.Camera = function(req, callback)
   resolution = Point2F(resolution[1], resolution[2])
   nearFar = Point2F(nearFar[1], nearFar[2])
 
-  local data = Engine.renderCameraShmem(color, depth, annotation, pos, rot, resolution, fov, nearFar)
+  -- local data = Engine.renderCameraShmem(color, depth, annotation, pos, rot, resolution, fov, nearFar)
+  local data = Engine.renderCameraBase64Blocking(pos, rot, resolution, fov, nearFar)
 
   callback(data)
 end
@@ -461,8 +462,14 @@ sensors.Lidar = function(req, callback)
   local name = req['name']
   local lidar = lidars[name]
   if lidar ~= nil then
-    lidar:requestDataShmem(function(realSize)
-      callback({size = realSize})
+    lidar:requestData(function(data)
+      local points = {}
+      for i = 1, #data do
+        table.insert(points, data[i].x)
+        table.insert(points, data[i].y)
+        table.insert(points, data[i].z)
+      end
+      callback({points = points})
     end)
   else
     callback(nil)
