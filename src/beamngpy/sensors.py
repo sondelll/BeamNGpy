@@ -33,6 +33,15 @@ FAR = 1000
 LIDAR_POINTS = 2000000
 
 
+def _get_shmem_name(prefix, name, suffix):
+    unix = os.name != 'nt'
+    pid = os.getpid()
+    name = 'beamngpy_{}_{}_{}_{}'.format(pid, prefix, name, suffix)
+    if unix:
+        name = os.path.join('/tmp', name)
+    return name
+
+
 class AbstractSensor(ABC):
     """
     Abstract Sensor class declaring properties common to the ordinary and noise
@@ -512,31 +521,26 @@ class Camera(Sensor):
             name (str): The name of the camera.
         """
         if self.shmem:
-            pid = os.getpid()
             prefix = ''
             if vehicle:
                 prefix = vehicle.vid
             size = self.resolution[0] * self.resolution[1] * 4
-            self.colour_handle = '{}.{}.{}.colour'
-            self.colour_handle = self.colour_handle.format(pid, prefix, name)
+            self.colour_handle = _get_shmem_name(prefix, name, 'colour')
             self.colour_shmem = mmap.mmap(0, size, self.colour_handle)
             log.debug('Bound shmem for colour: %s', self.colour_handle)
 
-            self.depth_handle = '{}.{}.{}.depth'
-            self.depth_handle = self.depth_handle.format(pid, prefix, name)
+            self.depth_handle = _get_shmem_name(prefix, name, 'depth')
             self.depth_shmem = mmap.mmap(0, size, self.depth_handle)
             log.debug('Bound shmem for depth: %s', self.depth_handle)
 
-            self.annotation_handle = '{}.{}.{}.annotate'
-            self.annotation_handle = self.annotation_handle.format(pid, prefix,
-                                                                   name)
+            self.annotation_handle = _get_shmem_name(prefix, name,
+                                                     'annotate')
             self.annotation_shmem = mmap.mmap(0, size, self.annotation_handle)
             log.debug('Bound shmem for annotation: %s', self.annotation_handle)
 
             if self.instance:
-                self.instance_handle = '{}.{}.{}.instance'
-                self.instance_handle = self.instance_handle.format(pid, prefix,
-                                                                   name)
+                self.instance_handle = _get_shmem_name(prefix, name,
+                                                       'instance')
                 self.instance_shmem = mmap.mmap(0, size, self.instance_handle)
                 log.debug('Bound shmem for instance: %s', self.instance_handle)
 
@@ -833,8 +837,7 @@ class Lidar(Sensor):
                                          attached to.
             name (str): The name of the sensor.
         """
-        pid = os.getpid()
-        self.handle = '{}.{}.{}.lidar'.format(pid, vehicle.vid, name)
+        self.handle = _get_shmem_name(vehicle.vid, name, 'lidar')
         if self.use_shmem:
             self.shmem = mmap.mmap(0, Lidar.shmem_size, self.handle)
             log.debug('Bound memory for lidar: %s', self.handle)
